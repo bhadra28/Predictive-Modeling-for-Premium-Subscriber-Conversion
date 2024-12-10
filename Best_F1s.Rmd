@@ -1,0 +1,507 @@
+---
+title: "Best_F1"
+author: "Meera, Bhadra, Vishan"
+date: "2024-05-01"
+output: html_document
+---
+
+
+## R FIRST Best F1: 0.129 (Ensemble of XGBoost, Random Forest and Logistic Regression)
+
+```{r, include=FALSE}
+library(caret)
+library(xgboost)
+library(ROSE)
+library(randomForest)
+library(dplyr)
+
+set.seed(23)
+
+# Load and prepare data
+data_label <- read.csv("LabelData.csv")
+data_label$adopter <- as.factor(data_label$adopter)
+data_label <- data_label %>% select(-user_id)
+
+# Split data
+splitIndex <- createDataPartition(data_label$adopter, p = .8, list = FALSE)
+train_data <- data_label[splitIndex, ]
+test_data <- data_label[-splitIndex, ]
+
+# Balance training data
+balanced_data_train <- ovun.sample(adopter ~ ., data = train_data, method = "both", N = 30000)$data
+
+# Train XGBoost
+xgb_train <- xgb.DMatrix(data = as.matrix(balanced_data_train %>% select(-adopter)), label = as.numeric(balanced_data_train$adopter) - 1)
+xgb_model <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.02, nrounds = 350,max_depth = 5,min_child_weight = 5,gamma = 0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.8,lambda=7,colsample_bylevel=0.5,max_bin=1024, alpha=0.35)
+
+# Train Logistic Regression
+logistic_model <- glm(adopter ~ ., data = balanced_data_train, family = "binomial")
+
+# Train Random Forest
+rf_model <- randomForest(adopter ~ ., data = balanced_data_train, ntree = 450, max_depth=10,min_sample_split=6,max_terminal_nodes=1, min_samples_leaf=5,n_estimators=100,max_samples=0.4, max_features=5.0)
+
+# Prepare test data
+test_matrix <- as.matrix(test_data %>% select(-adopter))
+
+# Predictions
+pred_xgb <- predict(xgb_model, xgb.DMatrix(test_matrix)) > 0.70  
+pred_lr <- predict(logistic_model, test_data, type = "response") > 0.745
+pred_rf <- predict(rf_model, test_data, type = "prob")[, "1"] > 0.22
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb + pred_lr + pred_rf) >= 2  # Majority vote
+
+# Convert ensemble predictions to a factor with both 'FALSE' and 'TRUE' levels explicitly set
+ensemble_result <- factor(combined_preds, levels = c(FALSE, TRUE), labels = c("0", "1"))
+
+# Evaluate ensemble model performance
+conf_matrix <- confusionMatrix(ensemble_result, factor(test_data$adopter, levels = c("0", "1")), positive="1")
+print(conf_matrix)
+f1_score <- conf_matrix$byClass['F1']
+cat("F1 Score: ", f1_score, "\n")
+
+
+
+###################EXCEL FOR FOR SID#######################################
+data_label_balanced = ovun.sample(adopter ~ ., data = data_label, method = "both", N = 30000)$data
+labels_train <- as.numeric(data_label_balanced$adopter) - 1
+
+features_train <- as.matrix(data_label_balanced %>% select(-adopter))
+xgboost_train <- xgb.DMatrix(data = features_train, label = labels_train)
+
+#xgb_model <- xgboost(data = xgboost_train, max.depth = 5, nrounds = 150,eta = 0.3)
+model_full_xgb <- xgboost(data = xgboost_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.3,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+model_full_lr <- glm(adopter ~ ., data = data_label_balanced, family = "binomial")
+rf_model <- randomForest(adopter ~ ., data = data_label_balanced, ntree = 450, max_depth=10,min_sample_split=6,max_terminal_nodes=1, min_samples_leaf=5,n_estimators=100,max_samples=0.4, max_features=5.0)
+
+
+data_unlabel = read.csv("UnlabelData.csv")
+
+
+# Save user_id for later
+user_ids <- data_unlabel$user_id
+
+# Prepare features for prediction (exclude user_id column)
+features_test <- as.matrix(data_unlabel %>% select(-user_id))
+
+# Create DMatrix for testing. Since there are no labels for the test set, we don't include them.
+xgboost_test <- xgb.DMatrix(data = features_test)
+
+
+pred_xgb <- predict(model_full_xgb, xgboost_test) > 0.70  
+pred_lr <- predict(model_full_lr, data_unlabel, type = "response") > 0.745
+pred_rf <- predict(rf_model, data_unlabel, type = "prob")[, "1"] > 0.22
+
+
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb + pred_lr + pred_rf) >= 2  # Majority vote
+
+combined_preds <- as.numeric(combined_preds)  # Ensure the final output is also numeric (1 or 0)
+
+# Prepare submission file with user_id
+submission <- data.frame(user_id = user_ids, prediction = combined_preds)
+
+# Write the submission file to CSV
+write.csv(submission, "Team-3-Submission_22.csv", row.names = FALSE)
+
+
+```
+
+## R SECOND Best F1: 0.1275 Ensemble of XGBoost(different hyperparameters), Logistic Regression, Random Forest
+
+```{r, echo=FALSE}
+library(caret)
+library(xgboost)
+library(ROSE)
+library(randomForest)
+library(dplyr)
+
+set.seed(23)
+
+# Load and prepare data
+data_label <- read.csv("LabelData.csv")
+data_label$adopter <- as.factor(data_label$adopter)
+data_label <- data_label %>% select(-user_id)
+
+# Split data
+splitIndex <- createDataPartition(data_label$adopter, p = .8, list = FALSE)
+train_data <- data_label[splitIndex, ]
+test_data <- data_label[-splitIndex, ]
+
+# Balance training data
+balanced_data_train <- ovun.sample(adopter ~ ., data = train_data, method = "both", N = 30000)$data
+
+# Train XGBoost
+xgb_train <- xgb.DMatrix(data = as.matrix(balanced_data_train %>% select(-adopter)), label = as.numeric(balanced_data_train$adopter) - 1)
+xgb_model <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.02, nrounds = 350,max_depth = 5,gamma =0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.8,lambda=7, alpha=0.35)
+
+# Train Logistic Regression
+logistic_model <- glm(adopter ~ ., data = balanced_data_train, family = "binomial")
+
+# Train Random Forest
+rf_model <- randomForest(adopter ~ ., data = balanced_data_train, ntree = 450, max_depth=10,min_sample_split=6,max_terminal_nodes=1, min_samples_leaf=5,n_estimators=100,max_samples=0.4, max_features=5.0)
+
+# Prepare test data
+test_matrix <- as.matrix(test_data %>% select(-adopter))
+
+# Predictions
+pred_xgb <- predict(xgb_model, xgb.DMatrix(test_matrix)) > 0.70  
+pred_lr <- predict(logistic_model, test_data, type = "response") > 0.745
+pred_rf <- predict(rf_model, test_data, type = "prob")[, "1"] > 0.22
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb + pred_lr + pred_rf) >= 2  # Majority vote
+
+# Convert ensemble predictions to a factor with both 'FALSE' and 'TRUE' levels explicitly set
+ensemble_result <- factor(combined_preds, levels = c(FALSE, TRUE), labels = c("0", "1"))
+
+# Evaluate ensemble model performance
+conf_matrix <- confusionMatrix(ensemble_result, factor(test_data$adopter, levels = c("0", "1")), positive="1")
+print(conf_matrix)
+f1_score <- conf_matrix$byClass['F1']
+cat("F1 Score: ", f1_score, "\n")
+
+
+
+###################EXCEL FOR FOR SID#######################################
+data_label_balanced = ovun.sample(adopter ~ ., data = data_label, method = "both", N = 30000)$data
+labels_train <- as.numeric(data_label_balanced$adopter) - 1
+
+features_train <- as.matrix(data_label_balanced %>% select(-adopter))
+xgboost_train <- xgb.DMatrix(data = features_train, label = labels_train)
+
+#xgb_model <- xgboost(data = xgboost_train, max.depth = 5, nrounds = 150,eta = 0.3)
+model_full_xgb <- xgboost(data = xgboost_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.3,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+model_full_lr <- glm(adopter ~ ., data = data_label_balanced, family = "binomial")
+rf_model <- randomForest(adopter ~ ., data = data_label_balanced, ntree = 450, max_depth=10,min_sample_split=6,max_terminal_nodes=1, min_samples_leaf=5,n_estimators=100,max_samples=0.4, max_features=5.0)
+
+
+data_unlabel = read.csv("UnlabelData.csv")
+
+
+# Save user_id for later
+user_ids <- data_unlabel$user_id
+
+# Prepare features for prediction (exclude user_id column)
+features_test <- as.matrix(data_unlabel %>% select(-user_id))
+
+# Create DMatrix for testing. Since there are no labels for the test set, we don't include them.
+xgboost_test <- xgb.DMatrix(data = features_test)
+
+
+pred_xgb <- predict(model_full_xgb, xgboost_test) > 0.70  
+pred_lr <- predict(model_full_lr, data_unlabel, type = "response") > 0.745
+pred_rf <- predict(rf_model, data_unlabel, type = "prob")[, "1"] > 0.22
+
+
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb + pred_lr + pred_rf) >= 2  # Majority vote
+
+combined_preds <- as.numeric(combined_preds)  # Ensure the final output is also numeric (1 or 0)
+
+# Prepare submission file with user_id
+submission <- data.frame(user_id = user_ids, prediction = combined_preds)
+
+# Write the submission file to CSV
+write.csv(submission, "Team-3-Submission_15.csv", row.names = FALSE)
+
+```
+ 
+##  THIRD Best F1: 0.1271 Ensemble of 3 XGBoost(different hyperparameters)
+```{r, echo=FALSE}
+
+library(caret)         # For model training and evaluation
+library(xgboost)       # For the XGBoost algorithm
+library(e1071)         # For Naive Bayes
+library(ROSE)          # For data balancing
+library(dplyr)         # For data manipulation
+
+set.seed(23)
+data_label <- read.csv("LabelData.csv")
+data_label$adopter <- as.factor(data_label$adopter)
+data_label <- data_label %>% select(-user_id)  # Remove 'user_id' as it's not a feature
+
+# Split data
+splitIndex <- createDataPartition(data_label$adopter, p = .8, list = FALSE)
+train_data <- data_label[splitIndex, ]
+test_data <- data_label[-splitIndex, ]
+
+balanced_data_train <- ovun.sample(adopter ~ ., data = train_data, method = "both", N = 30000)$data
+
+# Train XGBoost
+xgb_train <- xgb.DMatrix(data = as.matrix(balanced_data_train %>% select(-adopter)), label = as.numeric(balanced_data_train$adopter) - 1)
+xgb_model1 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.3,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+
+xgb_model2 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.2,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+
+xgb_model3 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.03, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.8,lambda=7)#, nestimators=3)
+
+
+# Prepare test data
+test_matrix <- as.matrix(test_data %>% select(-adopter))
+
+# Predictions
+# Predictions from XGBoost
+pred_xgb1 <- predict(xgb_model1, xgb.DMatrix(test_matrix))
+pred_xgb1 <- as.numeric(pred_xgb1 > 0.7)
+
+pred_xgb2 <- predict(xgb_model2, xgb.DMatrix(test_matrix))
+pred_xgb2 <- as.numeric(pred_xgb2 > 0.7)
+
+pred_xgb3 <- predict(xgb_model3, xgb.DMatrix(test_matrix))
+pred_xgb3 <- as.numeric(pred_xgb3 > 0.7)
+
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb1 + pred_xgb2 + pred_xgb3) > 1  # Majority vote
+
+
+# Ensure binary outcomes are treated as factor with both levels '0' and '1'
+#ensemble_result <- factor(combined_preds, levels = c(FALSE, TRUE))
+#test_adopter_factor <- factor(test_data$adopter, levels = levels(ensemble_result))
+
+
+# Convert ensemble predictions to a factor with both 'FALSE' and 'TRUE' levels explicitly set
+ensemble_result <- factor(combined_preds, levels = c(FALSE, TRUE), labels = c("0", "1"))
+
+# Convert the test data adopter column to a factor with the same levels as ensemble_result
+test_adopter_factor <- factor(test_data$adopter, levels = c("0", "1"))
+
+conf_matrix <- confusionMatrix(ensemble_result, test_data$adopter, positive="1")
+print(conf_matrix)
+f1_score <- conf_matrix$byClass['F1']
+cat("F1 Score: ", f1_score, "\n")
+
+
+###########EXCEL FOR FOR SID######
+
+data_label_balanced = ovun.sample(adopter ~ ., data = data_label, method = "both", N = 30000)$data
+labels_train <- as.numeric(data_label_balanced$adopter) - 1
+
+features_train <- as.matrix(data_label_balanced %>% select(-adopter))
+xgboost_train <- xgb.DMatrix(data = features_train, label = labels_train)
+
+#xgb_model <- xgboost(data = xgboost_train, max.depth = 5, nrounds = 150,eta = 0.3)
+model_full_1 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.3,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+
+model_full_2 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.01, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.2,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)#, nestimators=3)
+
+model_full_3 <- xgboost(data = xgb_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.03, nrounds = 350,max_depth = 5,min_child_weight = 1,gamma = 0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.8,lambda=7)#, nestimators=3)
+
+# import unlabeled data and make predictions for the unlabeled data
+data_unlabel = read.csv("UnlabelData.csv")
+
+#data_unlabel_matrixed <- as.matrix(data_unlabel)
+
+
+# Save user_id for later
+user_ids <- data_unlabel$user_id
+
+# Prepare features for prediction (exclude user_id column)
+features_test <- as.matrix(data_unlabel %>% select(-user_id))
+
+# Create DMatrix for testing. Since there are no labels for the test set, we don't include them.
+xgboost_test <- xgb.DMatrix(data = features_test)
+
+
+pred_xgb1 <- predict(model_full_1, xgboost_test)
+pred_xgb1 <- as.numeric(pred_xgb1 > 0.7)  # Apply threshold and convert to numeric
+
+pred_xgb2 <- predict(model_full_2, xgboost_test)
+pred_xgb2 <- as.numeric(pred_xgb2 > 0.7)  # Apply threshold and convert to numeric
+
+pred_xgb3 <- predict(model_full_3, xgboost_test)
+pred_xgb3 <- as.numeric(pred_xgb3 > 0.7)  # Apply threshold and convert to numeric
+
+# Ensemble: Majority Voting
+combined_preds <- (pred_xgb1 + pred_xgb2 + pred_xgb3) > 1  # Majority vote
+combined_preds <- as.numeric(combined_preds)  # Ensure the final output is also numeric (1 or 0)
+
+# Prepare submission file with user_id
+submission <- data.frame(user_id = user_ids, prediction = combined_preds)
+
+# Write the submission file to CSV
+write.csv(submission, "Team-3-Submission_12.csv", row.names = FALSE)
+
+
+
+
+```
+##  FOURTH Best F1: 0.121  XGBoost model with hyperparameter tuning, oversampling, probability tuning
+```{r, echo=FALSE}
+#install.packages("smotefamily")
+library(smotefamily)
+library(xgboost)
+library(ROSE)
+library(caret)
+library(pROC)
+library(dplyr)
+
+set.seed(23)
+data_label <- read.csv("LabelData.csv")
+data_label$adopter <- as.factor(data_label$adopter)
+data_label <- data_label %>% select(-user_id)
+
+table(data_label$adopter) 
+
+
+splitIndex <- createDataPartition(data_label$adopter, p = .8, list = FALSE)
+train_data_split <- data_label[splitIndex, ]
+test_data_split <- data_label[-splitIndex, ]
+balanced_data_train <- ovun.sample(adopter ~ ., data = train_data_split, method = "both", N = 30000)$data
+
+# Apply SMOTE to the training set
+#balanced_data_train <- SMOTE(adopter ~ ., train_data_split, k = 5, perc.over = 100, perc.under = 200)
+
+features_train <- as.matrix(balanced_data_train %>% select(-adopter))
+labels_train <- as.numeric(balanced_data_train$adopter)- 1
+
+features_test <- as.matrix(test_data_split %>% select(-adopter))
+labels_test <- as.numeric(test_data_split$adopter)- 1
+
+xgboost_train <- xgb.DMatrix(data = features_train, label = labels_train)
+xgboost_test <- xgb.DMatrix(data = features_test, label = labels_test)
+
+#xgb_model <- xgboost(data = xgboost_train, max.depth = 5, nrounds = 150,eta = 0.3)
+xgb_model <- xgboost(data = xgboost_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.03, nrounds = 350,max_depth = 5,min_child_weight = 5,gamma = 0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.8,lambda=7)
+
+pred_test = predict(xgb_model, xgboost_test)
+pred_test = ifelse(pred_test > 0.7, 1, 0)
+
+pred_y <- factor(pred_test, levels = c("0", "1"))
+
+cm = confusionMatrix(pred_y, factor(labels_test, levels = c("0", "1")), positive = "1")
+print(cm)
+cat("Accuracy: ", cm$overall['Accuracy'], "\n")
+cat("Precision: ", cm$byClass['Pos Pred Value'], "\n")
+cat("Recall: ", cm$byClass['Sensitivity'], "\n")
+cat("F1 Score: ", cm$byClass['F1'], "\n")
+
+
+###########EXCEL FOR FOR SID######
+
+data_label_balanced = ovun.sample(adopter ~ ., data = data_label, method = "both", N = 30000)$data
+labels_train <- as.numeric(data_label_balanced$adopter) - 1
+
+features_train <- as.matrix(data_label_balanced %>% select(-adopter))
+xgboost_train <- xgb.DMatrix(data = features_train, label = labels_train)
+
+#xgb_model <- xgboost(data = xgboost_train, max.depth = 5, nrounds = 150,eta = 0.3)
+model_full <- xgboost(data = xgboost_train, objective = "binary:logistic", eval_metric = "auc", eta = 0.03, nrounds = 350,max_depth = 5,min_child_weight = 5,gamma = 0.1,scale_pos_weight = 1,subsample=0.8, colsample_bytree = 0.9,lambda=7)
+
+
+# import unlabeled data and make predictions for the unlabeled data
+data_unlabel = read.csv("UnlabelData.csv")
+
+#data_unlabel_matrixed <- as.matrix(data_unlabel)
+
+
+# Save user_id for later
+user_ids <- data_unlabel$user_id
+
+# Prepare features for prediction (exclude user_id column)
+features_test <- as.matrix(data_unlabel %>% select(-user_id))
+
+# Create DMatrix for testing. Since there are no labels for the test set, we don't include them.
+xgboost_test <- xgb.DMatrix(data = features_test)
+
+# Make predictions
+pred_probs = predict(model_full, xgboost_test)
+pred = ifelse(pred_probs > 0.7, 1, 0)
+
+# Prepare submission file with user_id
+submission = data.frame(user_id = user_ids, prediction = pred)
+
+# Write the submission file to CSV
+write.csv(submission, "Team-3-Submission_7.csv", row.names = FALSE)
+
+
+
+```
+##FIFTH BEST F1 IS LOGISTIC REGRESSION WITH PROBABILITY THRESHOLD TUNING
+
+```{r, echo=FALSE}
+
+set.seed(23)
+library(dplyr)
+library(caret)
+library(rpart)
+library(ROSE)
+
+getwd()
+
+data_label <- read.csv("LabelData.csv")
+
+table(data_label$adopter) 
+
+# convert outcome "adopter" to be a factor for classification
+data_label$adopter <- as.factor(data_label$adopter)
+
+# user_id not useful as a feature
+data_label <- data_label %>% select(-user_id)
+
+# Create 5 folds for cross-validation
+cv_folds <- createFolds(y = data_label$adopter, k = 5, list = TRUE)
+
+# Initialize vectors to store performance metrics
+metrics_list <- list(F1 = numeric())
+
+# Loop through each fold
+for (i in seq_along(cv_folds)) {
+  train_indices <- setdiff(1:nrow(data_label), cv_folds[[i]])
+  test_indices <- cv_folds[[i]]
+  
+  # Create training and testing sets
+  data_train <- data_label[train_indices, ]
+  data_test <- data_label[test_indices, ]
+  
+  # Oversampling the minority class in the training data
+  train_data_oversampled <- ovun.sample(adopter ~ ., data = data_train, method = "over")$data
+  
+  # Model: Build and evaluate logistic regression model
+  model <- glm(adopter ~ ., data = train_data_oversampled, family = "binomial")
+  
+  # Make predictions on test data
+  pred_test <- predict(model, data_test, type = "response")
+  pred_test <- ifelse(pred_test > 0.745, "1", "0")
+  
+  # Evaluate model performance
+  cm <- confusionMatrix(factor(pred_test), factor(data_test$adopter), positive = "1")
+  F1 <- cm$byClass["F1"]
+  
+  metrics_list$F1 <- c(metrics_list$F1, F1)
+}
+
+# Calculate the average of each metric across all folds
+average_metrics <- sapply(metrics_list, mean)
+
+# Print the average metrics
+print(average_metrics)
+###################EXCEL FOR FOR SID####################
+# Build the best decision tree model again with the whole labeled data
+# do not forget to oversample the whole labeled data if the best model was built using balanced (oversampled) data
+
+balanced_data_train <- ovun.sample(adopter ~ ., data = train_data_split, method = "both", N = 30000)$data
+
+model_full <- glm(adopter ~ ., data = balanced_data_train, family = "binomial")
+
+
+# import unlabeled data and make predictions for the unlabeled data
+data_unlabel = read.csv("UnlabelData.csv")
+
+pred = predict(model_full, data_unlabel, type = "response")
+
+threshold <- 0.745
+
+# Convert probabilities to binary predictions
+binary_pred <- ifelse(pred >= threshold, 1, 0)
+
+# prepare submission file
+submission <- data.frame(user_id = data_unlabel$user_id, prediction = binary_pred)
+
+write.csv(submission, "Team-3-Submission-5.csv", row.names = FALSE)
+
+
+```
